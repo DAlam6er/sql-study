@@ -113,6 +113,7 @@ WHERE author_id = (SELECT author_id
                                   FROM book))
 RETURNING *;
 
-DELETE FROM author
+DELETE
+FROM author
 WHERE id = 7
 RETURNING *;

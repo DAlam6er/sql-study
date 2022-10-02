@@ -185,7 +185,7 @@ WHERE seat_no = 'B1'
 
 -- * ------- * промежуток времени
 SELECT interval '2 years 1 days';
-SELECT (now() - interval '2 days')::date;
+SELECT (now() - interval '2 days') ::date;
 SELECT '123'::integer;
 
 -- Сколько мест осталось незанятыми 2020-06-14 на рейсе MN3002?
@@ -214,7 +214,7 @@ WHERE aircraft_id = 1
                  FROM ticket t
                           JOIN flight f ON t.flight_id = f.id
                  WHERE f.flight_no = 'MN3002'
-                   AND f.departure_date::date = '2020-06-14'
+                   AND f.departure_date ::date = '2020-06-14'
                    AND s.seat_no = t.seat_no);
 
 -- Какие 2 перелета были самые длительные за все время?
@@ -263,10 +263,10 @@ FROM (SELECT t.passenger_no,
 -- Отобразить разницу в стоимости между текущим и ближайшими в отсортированном списке маршрутами
 -- ищем разницу с лидером (у первого элемента нет лидера)
 SELECT t1.*,
-       COALESCE(lead(t1.sum_cost) OVER (ORDER BY t1.sum_cost), t1.sum_cost) - t1.sum_cost diff
-FROM (
-SELECT t.flight_id,
-       sum(t.cost) sum_cost
-FROM ticket t
-GROUP BY flight_id
-ORDER BY 2 DESC) t1;
+       COALESCE(lead(t1.sum_cost) OVER (ORDER BY t1.sum_cost),
+                t1.sum_cost) - t1.sum_cost diff
+FROM (SELECT t.flight_id,
+             sum(t.cost) sum_cost
+      FROM ticket t
+      GROUP BY flight_id
+      ORDER BY 2 DESC) t1;
