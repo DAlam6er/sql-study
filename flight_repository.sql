@@ -66,7 +66,32 @@ CREATE TABLE ticket
     flight_id      BIGINT REFERENCES flight (id) NOT NULL,
     seat_no        VARCHAR(4)                    NOT NULL,
     cost           NUMERIC(8, 2)                 NOT NULL
+--  UNIQUE (flight_id, seat_no)
 );
+
+-- flight_idseat_no - порядок важен! это как фамилияИмя - поиск по имени ничего не даст
+CREATE UNIQUE INDEX unique_flight_id_seat_no_idx ON ticket (flight_id, seat_no);
+
+-- Будет full-scan, а не index-scan
+SELECT *
+FROM ticket
+WHERE seat_no = 'B1';
+
+-- При большом количестве, будет поиск по индексу
+SELECT *
+FROM ticket
+WHERE flight_id = 5;
+
+-- При большом количестве, будет поиск по индексу (зависит от оптимизатора)
+SELECT *
+FROM ticket
+WHERE seat_no = 'B1'
+  AND flight_id = 5;
+
+SELECT count(DISTINCT flight_id)
+FROM ticket;
+SELECT count(*)
+FROM ticket;
 
 -- Вставка данных
 INSERT INTO airport (code, country, city)
@@ -185,7 +210,7 @@ WHERE seat_no = 'B1'
 
 -- * ------- * промежуток времени
 SELECT interval '2 years 1 days';
-SELECT (now() - interval '2 days') ::date;
+SELECT (now() - interval '2 days')::date;
 SELECT '123'::integer;
 
 -- Сколько мест осталось незанятыми 2020-06-14 на рейсе MN3002?
@@ -214,10 +239,10 @@ WHERE aircraft_id = 1
                  FROM ticket t
                           JOIN flight f ON t.flight_id = f.id
                  WHERE f.flight_no = 'MN3002'
-                   AND f.departure_date ::date = '2020-06-14'
+                   AND f.departure_date::date = '2020-06-14'
                    AND s.seat_no = t.seat_no);
 
--- 3-й вариант с использованием вычитания множеств
+-- 3-й вариант
 SELECT s.aircraft_id,
        s.seat_no
 FROM seat s
@@ -283,3 +308,200 @@ FROM (SELECT t.flight_id,
       FROM ticket t
       GROUP BY flight_id
       ORDER BY 2 DESC) t1;
+
+VALUES (1, 2),
+       (3, 4),
+       (5, 6),
+       (7, 8)
+UNION
+VALUES (1, 2),
+       (3, 4),
+       (5, 6),
+       (7, 8);
+
+VALUES (1, 2),
+       (3, 4),
+       (5, 6),
+       (7, 8)
+UNION ALL
+VALUES (1, 2),
+       (3, 4),
+       (5, 6),
+       (7, 8);
+
+VALUES (1, '2'),
+       (3, '4'),
+       (5, '6'),
+       (7, '8')
+INTERSECT
+VALUES (1, '2'),
+       (2, '4'),
+       (5, '6'),
+       (7, '9');
+
+VALUES (1, '2'),
+       (3, '4'),
+       (5, '6'),
+       (7, '8')
+EXCEPT
+VALUES (1, '2'),
+       (2, '4'),
+       (5, '6'),
+       (7, '9');
+
+SELECT id
+FROM ticket
+-- поиск по индексу
+WHERE id = 29
+-- дополнительная фильтрация
+  AND passenger_no = 'DSA581';
+
+-- ************************************************************************
+-- Планы выполнения
+-- ************************************************************************
+EXPLAIN
+SELECT *
+FROM ticket;
+
+SELECT reltuples,
+       relkind,
+       relpages
+FROM pg_class
+WHERE relname = 'ticket';
+
+SELECT avg(bit_length(passenger_no) / 8),
+       avg(bit_length(passenger_name) / 8),
+       avg(bit_length(seat_no) / 8)
+FROM ticket;
+
+-- Seq Scan
+EXPLAIN
+SELECT *
+FROM ticket
+WHERE passenger_name LIKE 'Иван%';
+
+-- Seq Scan, HashAggregate
+EXPLAIN
+SELECT flight_id,
+       count(*)
+FROM ticket
+GROUP BY flight_id;
+
+-- Seq Scan
+EXPLAIN
+SELECT *
+FROM ticket
+WHERE id = 25;
+
+CREATE TABLE test1
+(
+    id      SERIAL PRIMARY KEY,
+    number1 INT         NOT NULL,
+    number2 INT         NOT NULL,
+    value   VARCHAR(32) NOT NULL
+);
+
+CREATE INDEX test1_number1_idx ON test1 (number1);
+CREATE INDEX test1_number2_idx ON test1 (number2);
+
+INSERT INTO test1(number1, number2, value)
+SELECT random() * generate_series,
+       random() * generate_series,
+       generate_series
+FROM generate_series(1, 100000);
+
+SELECT relname,
+       reltuples,
+       relkind,
+       relpages
+FROM pg_class
+WHERE relname LIKE 'test1%';
+
+ANALYZE test1;
+
+-- Index Scan
+EXPLAIN
+SELECT *
+FROM test1
+WHERE number1 = 1000;
+
+-- Index Only Scan
+EXPLAIN
+SELECT number1
+FROM test1
+WHERE number1 = 1000;
+
+-- Bitmap Scan
+EXPLAIN
+SELECT *
+FROM test1
+WHERE number1 < 1000
+  and number1 > 90000;
+
+-- Bitmap Scan
+EXPLAIN
+SELECT *
+FROM test1
+WHERE number1 < 1000
+   OR number1 > 90000;
+
+EXPLAIN ANALYSE
+SELECT *
+FROM test1
+WHERE number1 < 1000;
+
+CREATE TABLE test2
+(
+    id       SERIAL PRIMARY KEY,
+    test1_id INT REFERENCES test1 (id) NOT NULL,
+    number1  INT                       NOT NULL,
+    number2  INT                       NOT NULL,
+    value    VARCHAR(32)               NOT NULL
+);
+
+INSERT INTO test2 (test1_id, number1, number2, value)
+SELECT id,
+       random() * number1,
+       random() * number2,
+       value
+FROM test1;
+
+CREATE INDEX test2_number1_idx ON test2 (number1);
+CREATE INDEX test2_number2_idx ON test2 (number2);
+
+-- Nested Loop
+EXPLAIN ANALYSE
+SELECT *
+FROM test1 t1
+         JOIN test2 t2
+              ON t1.id = t2.test1_id
+LIMIT 100;
+
+-- Hash Join
+EXPLAIN ANALYSE
+SELECT *
+FROM test1 t1
+         JOIN test2 t2
+              ON t1.id = t2.test1_id;
+
+-- Merge Join
+-- 1 4 5 6 8 9 10 22 ... test2.test1_id
+-- 1 2 4 5 7 9 10 18 ... test1.id
+EXPLAIN ANALYSE
+SELECT *
+FROM test1 t1
+         JOIN (SELECT * FROM test2 ORDER BY test1_id) t2
+              ON t1.id = t2.test1_id;
+
+CREATE INDEX test2_test1_id_idx ON test2 (test1_id);
+
+ANALYSE test2;
+
+-- Ожидание: более дешёвый Merge Join
+-- Реальность: Hash Join
+-- Планировщик может выполнить запрос не так, как мы предполагаем
+-- Зависит это от статистических данных (н-р выполнение предыдущего запроса)
+EXPLAIN ANALYSE
+SELECT *
+FROM test1 t1
+         JOIN test2 t2 ON t1.id = t2.test1_id;
