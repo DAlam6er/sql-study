@@ -217,6 +217,19 @@ WHERE aircraft_id = 1
                    AND f.departure_date ::date = '2020-06-14'
                    AND s.seat_no = t.seat_no);
 
+-- 3-й вариант с использованием вычитания множеств
+SELECT s.aircraft_id,
+       s.seat_no
+FROM seat s
+WHERE s.aircraft_id = 1
+EXCEPT
+SELECT f.aircraft_id,
+       t.seat_no
+FROM ticket t
+         JOIN flight f ON t.flight_id = f.id
+WHERE f.flight_no = 'MN3002'
+  AND f.departure_date::date = '2020-06-14';
+
 -- Какие 2 перелета были самые длительные за все время?
 SELECT f.id,
        f.arrival_date,
