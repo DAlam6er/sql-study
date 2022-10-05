@@ -505,3 +505,42 @@ EXPLAIN ANALYSE
 SELECT *
 FROM test1 t1
          JOIN test2 t2 ON t1.id = t2.test1_id;
+
+-- ************************************************************************
+-- Триггеры
+-- ************************************************************************
+CREATE TABLE audit
+(
+    id         INT,
+    table_name TEXT,
+    date       TIMESTAMP
+);
+
+CREATE OR REPLACE FUNCTION audit_function() returns trigger
+    language plpgsql
+AS
+$$
+BEGIN
+    -- new - это данные, которые вставляются в определенную строку
+    -- old - это данные, которые были до того, как была совершена
+    -- операция UPDATE/DELETE
+    -- tg_table_name - глобальная переменная - имя таблицы, на которой сработал триггер
+    INSERT INTO audit (id, table_name, date)
+    VALUES (new.id, tg_table_name, now());
+    -- ничего не возвращаем, т.к. создаваемый на основе функции триггер
+    -- будет срабатывать после изменений
+    return null;
+END;
+$$;
+
+CREATE TRIGGER audit_aircraft_trigger
+    AFTER UPDATE OR INSERT OR DELETE
+    ON aircraft
+    FOR EACH ROW
+    EXECUTE FUNCTION audit_function();
+
+INSERT INTO aircraft (model)
+VALUES ('новый боинг');
+
+SELECT *
+FROM audit;
